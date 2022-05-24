@@ -10667,7 +10667,7 @@
 		5A67F23B284966AC00964D2E /* TrackBuffer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = TrackBuffer.cpp; sourceTree = "<group>"; };
 		5A67F23C284966AC00964D2E /* TrackBuffer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TrackBuffer.h; sourceTree = "<group>"; };
 		5A91469E8E9F8485C37A2876 /* JSSVGGraphicsElement.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = JSSVGGraphicsElement.cpp; sourceTree = "<group>"; };
-		5AEBAD8A283583AE0069741F /* MediaPlayerPrivateWebM.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MediaPlayerPrivateWebM.cpp; sourceTree = "<group>"; };
+		5AEBAD8A283583AE0069741F /* MediaPlayerPrivateWebM.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = MediaPlayerPrivateWebM.mm; sourceTree = "<group>"; };
 		5AEBAD8B283583AE0069741F /* MediaPlayerPrivateWebM.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MediaPlayerPrivateWebM.h; sourceTree = "<group>"; };
 		5B1E0E4325D1629B00272281 /* ScrollingEffectsController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ScrollingEffectsController.mm; sourceTree = "<group>"; };
 		5B30695A18B3D3450099D5E8 /* WebGLDrawBuffers.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = WebGLDrawBuffers.cpp; sourceTree = "<group>"; };
@@ -29635,7 +29635,7 @@
 				7B1619102719880E00C40EAC /* WebProcessGraphicsContextGLCocoa.mm */,
 				1C16B86C284D73EF00318FEC /* FontCacheCocoa.mm */,
 				1C16B86A284D6B8200318FEC /* SystemFontDatabaseCocoa.mm */,
-				5AEBAD8A283583AE0069741F /* MediaPlayerPrivateWebM.cpp */,
+				5AEBAD8A283583AE0069741F /* MediaPlayerPrivateWebM.mm */,
 				5AEBAD8B283583AE0069741F /* MediaPlayerPrivateWebM.h */,
 			);
 			path = cocoa;

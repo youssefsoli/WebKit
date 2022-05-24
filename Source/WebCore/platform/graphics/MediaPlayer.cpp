@@ -265,15 +265,17 @@ void RemoteMediaPlayerSupport::setRegisterRemotePlayerCallback(RegisterRemotePla
 static void buildMediaEnginesVector() WTF_REQUIRES_LOCK(mediaEngineVectorLock)
 {
     ASSERT(mediaEngineVectorLock.isLocked());
-
-#if ENABLE(WEBM_EXPERIMENT)
-        MediaPlayerPrivateWebM::registerMediaEngine(addMediaEngine);
-#endif
-    
 #if USE(AVFOUNDATION)
     if (DeprecatedGlobalSettings::isAVFoundationEnabled()) {
         auto& registerRemoteEngine = registerRemotePlayerCallback();
 
+#if ENABLE(WEBM_EXPERIMENT)
+        if (registerRemoteEngine)
+            registerRemoteEngine(addMediaEngine, MediaPlayerEnums::MediaEngineIdentifier::CocoaWebM);
+        else
+            MediaPlayerPrivateWebM::registerMediaEngine(addMediaEngine);
+#endif
+        
 #if PLATFORM(COCOA)
         if (registerRemoteEngine)
             registerRemoteEngine(addMediaEngine, MediaPlayerEnums::MediaEngineIdentifier::AVFoundation);
