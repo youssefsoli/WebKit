@@ -27,17 +27,28 @@
 
 #if PLATFORM(COCOA) && ENABLE(WEBM_EXPERIMENT)
 
+#include "HTTPHeaderNames.h"
 #include "MediaPlayerPrivate.h"
 #include "NotImplemented.h"
+#include "PlatformLayer.h"
+#include "PlatformMediaResourceLoader.h"
+#include "SampleBufferDisplayLayer.h"
+#include "SampleMap.h"
+#include "VideoFrame.h"
+#include "VideoLayerManagerObjC.h"
 #include <wtf/WeakPtr.h>
 #include <wtf/LoggerHelper.h>
 
+OBJC_CLASS AVSampleBufferDisplayLayer;
+
 namespace WebCore {
 
-class MediaPlayerPrivateWebM : public MediaPlayerPrivateInterface, public CanMakeWeakPtr<MediaPlayerPrivateWebM>
-#if !RELEASE_LOG_DISABLED
+class WebMResourceClient;
+class WebMVideoData;
+
+class MediaPlayerPrivateWebM
+    : public MediaPlayerPrivateInterface
     , private LoggerHelper
-#endif
 {
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -52,20 +63,25 @@ public:
     void load(const URL&, const ContentType&, MediaSourcePrivateClient&) final;
 #endif
 #if ENABLE(MEDIA_STREAM)
-    void load(MediaStreamPrivate&) final { };
+    void load(MediaStreamPrivate&) final;
 #endif
     
     void cancelLoad() final;
+    
+    PlatformLayer* platformLayer() const final;
     
     void play() final;
     void pause() final;
     
     FloatSize naturalSize() const final { return m_naturalSize; };
     
-    bool hasVideo() const final { return m_hasAudio; };
-    bool hasAudio() const final { return m_hasVideo; };
+    bool hasVideo() const final { return m_hasVideo; };
+    bool hasAudio() const final { return m_hasAudio; };
     
     void setPageIsVisible(bool) final;
+    
+    MediaTime currentMediaTime() const final;
+    MediaTime durationMediaTime() const final { return m_duration; };
     
     bool seeking() const final { return m_seeking; };
     
@@ -74,27 +90,36 @@ public:
     MediaPlayer::NetworkState networkState() const final { return m_networkState; };
     MediaPlayer::ReadyState readyState() const final { return m_readyState; };
     
-    std::unique_ptr<PlatformTimeRanges> buffered() const final { return makeUnique<PlatformTimeRanges>(); };
+    std::unique_ptr<PlatformTimeRanges> buffered() const final;
     
-    bool didLoadingProgress() const final { return false; };
+    bool didLoadingProgress() const final;
     
-    void paint(GraphicsContext&, const FloatRect&) final;
+    void paint(GraphicsContext&, const FloatRect&) final { };
     
     DestinationColorSpace colorSpace() final { return DestinationColorSpace::SRGB(); };
     
     void setNaturalSize(FloatSize);
     void setHasAudio(bool);
     void setHasVideo(bool);
+    void setDuration(const MediaTime&);
     void setNetworkState(MediaPlayer::NetworkState);
     void setReadyState(MediaPlayer::ReadyState);
     void characteristicsChanged();
     
-#if !RELEASE_LOG_DISABLED
+    bool supportsAcceleratedRendering() const final { return true; };
+    
+    void dataReceived(const SharedBuffer&);
+    void loadFinished(const FragmentedSharedBuffer&);
+    
+    std::unique_ptr<WebMVideoData> demuxWebMData(SharedBuffer&);
+    
+    void ensureLayer();
+    void layersAreInitialized(IntSize, bool);
+    
     const Logger& logger() const final { return m_logger.get(); }
     const char* logClassName() const override { return "MediaPlayerPrivateWebM"; }
     const void* logIdentifier() const final { return reinterpret_cast<const void*>(m_logIdentifier); }
     WTFLogChannel& logChannel() const final;
-#endif
     
 private:
     friend class MediaPlayerFactoryWebM;
@@ -102,20 +127,27 @@ private:
     static MediaPlayer::SupportsType supportsType(const MediaEngineSupportParameters&);
     
     MediaPlayer* m_player;
+    RetainPtr<AVSampleBufferRenderSynchronizer> m_synchronizer;
+    WeakPtr<WebMResourceClient> m_resourceClient;
+    
+    std::unique_ptr<WebMVideoData> m_webmData;
+    RetainPtr<AVSampleBufferDisplayLayer> m_displayLayer;
     
     MediaPlayer::NetworkState m_networkState;
     MediaPlayer::ReadyState m_readyState;
     
-#if !RELEASE_LOG_DISABLED
     Ref<const Logger> m_logger;
     const void* m_logIdentifier;
-#endif
+    std::unique_ptr<VideoLayerManagerObjC> m_videoLayerManager;
     
     FloatSize m_naturalSize;
     bool m_hasAudio;
     bool m_hasVideo;
+    MediaTime m_currentTime;
+    MediaTime m_duration;
     bool m_seeking;
     bool m_paused;
+    bool m_visible;
 };
 
 } // namespace WebCore
