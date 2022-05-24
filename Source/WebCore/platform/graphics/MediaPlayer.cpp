@@ -82,6 +82,10 @@
 #include "MediaPlayerPrivateMediaStreamAVFObjC.h"
 #endif
 
+#if ENABLE(WEBM_EXPERIMENT)
+#include "MediaPlayerPrivateWebM.h"
+#endif
+
 #endif // PLATFORM(COCOA)
 
 #if PLATFORM(WIN) && USE(AVFOUNDATION) && !USE(GSTREAMER)
@@ -262,6 +266,10 @@ static void buildMediaEnginesVector() WTF_REQUIRES_LOCK(mediaEngineVectorLock)
 {
     ASSERT(mediaEngineVectorLock.isLocked());
 
+#if ENABLE(WEBM_EXPERIMENT)
+        MediaPlayerPrivateWebM::registerMediaEngine(addMediaEngine);
+#endif
+    
 #if USE(AVFOUNDATION)
     if (DeprecatedGlobalSettings::isAVFoundationEnabled()) {
         auto& registerRemoteEngine = registerRemotePlayerCallback();
