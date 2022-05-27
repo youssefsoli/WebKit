@@ -27,6 +27,7 @@
 
 #if PLATFORM(COCOA) && ENABLE(WEBM_EXPERIMENT)
 
+#include "AudioTrackPrivateWebM.h"
 #include "HTTPHeaderNames.h"
 #include "MediaPlayerPrivate.h"
 #include "NotImplemented.h"
@@ -34,20 +35,25 @@
 #include "PlatformMediaResourceLoader.h"
 #include "SampleBufferDisplayLayer.h"
 #include "SampleMap.h"
+#include "TextTrackRepresentation.h"
 #include "VideoFrame.h"
 #include "VideoLayerManagerObjC.h"
-#include <wtf/WeakPtr.h>
+#include "VideoTrackPrivateWebM.h"
+#include <wtf/HashMap.h>
 #include <wtf/LoggerHelper.h>
+#include <wtf/Vector.h>
+#include <wtf/WeakPtr.h>
 
+OBJC_CLASS AVSampleBufferAudioRenderer;
 OBJC_CLASS AVSampleBufferDisplayLayer;
 
 namespace WebCore {
 
 class WebMResourceClient;
-class WebMVideoData;
 
 class MediaPlayerPrivateWebM
-    : public MediaPlayerPrivateInterface
+    : public CanMakeWeakPtr<MediaPlayerPrivateWebM>
+    , public MediaPlayerPrivateInterface
     , private LoggerHelper
 {
     WTF_MAKE_FAST_ALLOCATED;
@@ -57,6 +63,10 @@ public:
     
     static void registerMediaEngine(MediaEngineRegistrar);
     
+    void dataReceived(const SharedBuffer&);
+    void loadFinished(const FragmentedSharedBuffer&);
+    
+private:
     void load(const String&) final;
     
 #if ENABLE(MEDIA_SOURCE)
@@ -70,6 +80,9 @@ public:
     
     PlatformLayer* platformLayer() const final;
     
+    bool supportsPictureInPicture() const override { return true; }
+    bool supportsFullscreen() const final { return true; }
+    
     void play() final;
     void pause() final;
     
@@ -82,14 +95,27 @@ public:
     
     MediaTime currentMediaTime() const final;
     MediaTime durationMediaTime() const final { return m_duration; };
+    MediaTime startTime() const final { return MediaTime::zeroTime(); };
+    MediaTime initialTime() const final { return MediaTime::zeroTime(); };
     
+    void seek(const MediaTime&) final;
     bool seeking() const final { return m_seeking; };
     
+    void setRateDouble(double) final;
+    double rate() const final { return m_rate; }
+    double effectiveRate() const final;
+    
     bool paused() const final { return m_paused; };
+    
+    void setVolume(float) final;
+    void setMuted(bool) final;
     
     MediaPlayer::NetworkState networkState() const final { return m_networkState; };
     MediaPlayer::ReadyState readyState() const final { return m_readyState; };
     
+    std::unique_ptr<PlatformTimeRanges> seekable() const final;
+    MediaTime maxMediaTimeSeekable() const final { return durationMediaTime(); }
+    MediaTime minMediaTimeSeekable() const final { return startTime(); }
     std::unique_ptr<PlatformTimeRanges> buffered() const final;
     
     bool didLoadingProgress() const final;
@@ -102,36 +128,56 @@ public:
     void setHasAudio(bool);
     void setHasVideo(bool);
     void setDuration(const MediaTime&);
+    void setDuration(MediaTime&&);
     void setNetworkState(MediaPlayer::NetworkState);
     void setReadyState(MediaPlayer::ReadyState);
     void characteristicsChanged();
     
     bool supportsAcceleratedRendering() const final { return true; };
     
-    void dataReceived(const SharedBuffer&);
-    void loadFinished(const FragmentedSharedBuffer&);
+    RetainPtr<PlatformLayer> createVideoFullscreenLayer() final;
+    void setVideoFullscreenLayer(PlatformLayer*, Function<void()>&& completionHandler) final;
+    void setVideoFullscreenFrame(FloatRect) final;
     
-    std::unique_ptr<WebMVideoData> demuxWebMData(SharedBuffer&);
+    bool requiresTextTrackRepresentation() const final;
+    void setTextTrackRepresentation(TextTrackRepresentation*) final;
+    void syncTextTrackBounds() final;
+    
+    void enqueueSamples();
+    void enqueueSamplesForTime(const MediaTime&);
+    
+    void demuxWebMData(SharedBuffer&);
     
     void ensureLayer();
-    void layersAreInitialized(IntSize, bool);
+    void ensureAudioRenderer();
+    
+    void destroyLayer();
+    void destroyAudioRenderer();
+    void clearTracks();
     
     const Logger& logger() const final { return m_logger.get(); }
-    const char* logClassName() const override { return "MediaPlayerPrivateWebM"; }
+    const char* logClassName() const final { return "MediaPlayerPrivateWebM"; }
     const void* logIdentifier() const final { return reinterpret_cast<const void*>(m_logIdentifier); }
     WTFLogChannel& logChannel() const final;
     
-private:
     friend class MediaPlayerFactoryWebM;
+    static bool isAvailable();
     static void getSupportedTypes(HashSet<String, ASCIICaseInsensitiveHash>&);
     static MediaPlayer::SupportsType supportsType(const MediaEngineSupportParameters&);
     
     MediaPlayer* m_player;
     RetainPtr<AVSampleBufferRenderSynchronizer> m_synchronizer;
+    RetainPtr<id> m_durationObserver;
     WeakPtr<WebMResourceClient> m_resourceClient;
     
-    std::unique_ptr<WebMVideoData> m_webmData;
+    Vector<RefPtr<VideoTrackPrivateWebM>> m_videoTracks;
+    Vector<RefPtr<AudioTrackPrivateWebM>> m_audioTracks;
+    
     RetainPtr<AVSampleBufferDisplayLayer> m_displayLayer;
+    RetainPtr<AVSampleBufferAudioRenderer> m_audioRenderer;
+    
+    SampleMap m_videoSamples;
+    SampleMap m_audioSamples;
     
     MediaPlayer::NetworkState m_networkState;
     MediaPlayer::ReadyState m_readyState;
@@ -145,6 +191,7 @@ private:
     bool m_hasVideo;
     MediaTime m_currentTime;
     MediaTime m_duration;
+    double m_rate;
     bool m_seeking;
     bool m_paused;
     bool m_visible;
