@@ -111,8 +111,12 @@ bool TrackBuffer::reenqueueMediaForTime(const MediaTime& time, const MediaTime& 
         currentSamplePTSIterator = m_samples.presentationOrder().findSampleStartingOnOrAfterPresentationTime(time);
 
     if (currentSamplePTSIterator == m_samples.presentationOrder().end()
-        || (currentSamplePTSIterator->first - time) > timeFudgeFactor)
+        || (currentSamplePTSIterator->first - time) > timeFudgeFactor) {
+#if !RELEASE_LOG_DISABLED
+        DEBUG_LOG_IF(m_logger, "no enqueable samples exist for time");
+#endif
         return false;
+    }
 
     // Search backward for the previous sync sample.
     DecodeOrderSampleMap::KeyType decodeKey(currentSamplePTSIterator->second->decodeTime(), currentSamplePTSIterator->second->presentationTime());
@@ -121,8 +125,12 @@ bool TrackBuffer::reenqueueMediaForTime(const MediaTime& time, const MediaTime& 
 
     auto reverseCurrentSampleIter = --DecodeOrderSampleMap::reverse_iterator(currentSampleDTSIterator);
     auto reverseLastSyncSampleIter = m_samples.decodeOrder().findSyncSamplePriorToDecodeIterator(reverseCurrentSampleIter);
-    if (reverseLastSyncSampleIter == m_samples.decodeOrder().rend())
+    if (reverseLastSyncSampleIter == m_samples.decodeOrder().rend()) {
+#if !RELEASE_LOG_DISABLED
+        DEBUG_LOG_IF(m_logger, "no enqueable sync sample exists for time");
+#endif
         return false;
+    }
 
     // Fill the decode queue with the non-displaying samples.
     for (auto iter = reverseLastSyncSampleIter; iter != reverseCurrentSampleIter; --iter) {

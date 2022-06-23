@@ -30,17 +30,21 @@
 #include "AudioTrackPrivateWebM.h"
 #include "HTTPHeaderNames.h"
 #include "MediaPlayerPrivate.h"
-#include "NotImplemented.h"
 #include "PlatformLayer.h"
 #include "PlatformMediaResourceLoader.h"
 #include "SampleBufferDisplayLayer.h"
 #include "SampleMap.h"
+#include "SourceBufferParserWebM.h"
 #include "TextTrackRepresentation.h"
+#include "TimeRanges.h"
 #include "VideoFrame.h"
 #include "VideoLayerManagerObjC.h"
 #include "VideoTrackPrivateWebM.h"
+#include <wtf/HashFunctions.h>
 #include <wtf/HashMap.h>
 #include <wtf/LoggerHelper.h>
+#include <wtf/RobinHoodHashMap.h>
+#include <wtf/UniqueRef.h>
 #include <wtf/Vector.h>
 #include <wtf/WeakPtr.h>
 
@@ -49,6 +53,9 @@ OBJC_CLASS AVSampleBufferDisplayLayer;
 
 namespace WebCore {
 
+class MediaDescription;
+class MediaSampleAVFObjC;
+class TrackBuffer;
 class WebMResourceClient;
 
 class MediaPlayerPrivateWebM
@@ -61,11 +68,12 @@ public:
     MediaPlayerPrivateWebM(MediaPlayer*);
     ~MediaPlayerPrivateWebM();
     
-    static void registerMediaEngine(MediaEngineRegistrar);
-    
+    // WebMResourceClient
     void dataReceived(const SharedBuffer&);
+    void loadFailed(const ResourceError&);
     void loadFinished(const FragmentedSharedBuffer&);
     
+    static void registerMediaEngine(MediaEngineRegistrar);
 private:
     void load(const String&) final;
     
@@ -85,6 +93,7 @@ private:
     
     void play() final;
     void pause() final;
+    bool paused() const final;
     
     FloatSize naturalSize() const final { return m_naturalSize; };
     
@@ -93,6 +102,7 @@ private:
     
     void setPageIsVisible(bool) final;
     
+    MediaTime timeFudgeFactor() const { return { 1, 10 }; }
     MediaTime currentMediaTime() const final;
     MediaTime durationMediaTime() const final { return m_duration; };
     MediaTime startTime() const final { return MediaTime::zeroTime(); };
@@ -105,8 +115,6 @@ private:
     double rate() const final { return m_rate; }
     double effectiveRate() const final;
     
-    bool paused() const final { return m_paused; };
-    
     void setVolume(float) final;
     void setMuted(bool) final;
     
@@ -118,6 +126,9 @@ private:
     MediaTime minMediaTimeSeekable() const final { return startTime(); }
     std::unique_ptr<PlatformTimeRanges> buffered() const final;
     
+    void setBufferedRanges(PlatformTimeRanges);
+    void updateBufferedFromTrackBuffers(bool);
+    
     bool didLoadingProgress() const final;
     
     void paint(GraphicsContext&, const FloatRect&) final { };
@@ -127,8 +138,7 @@ private:
     void setNaturalSize(FloatSize);
     void setHasAudio(bool);
     void setHasVideo(bool);
-    void setDuration(const MediaTime&);
-    void setDuration(MediaTime&&);
+    void setDuration(MediaTime);
     void setNetworkState(MediaPlayer::NetworkState);
     void setReadyState(MediaPlayer::ReadyState);
     void characteristicsChanged();
@@ -143,16 +153,49 @@ private:
     void setTextTrackRepresentation(TextTrackRepresentation*) final;
     void syncTextTrackBounds() final;
     
-    void enqueueSamples();
-    void enqueueSamplesForTime(const MediaTime&);
+    void enqueueSample(Ref<MediaSample>&&, uint64_t);
+    void reenqueSamples(uint64_t);
+    void reenqueueMediaForTime(TrackBuffer&, uint64_t, const MediaTime&);
+    void notifyClientWhenReadyForMoreSamples(uint64_t);
     
-    void demuxWebMData(SharedBuffer&);
+    bool canSetMinimumUpcomingPresentationTime(uint64_t) const;
+    void setMinimumUpcomingPresentationTime(uint64_t, const MediaTime&);
+    void clearMinimumUpcomingPresentationTime(uint64_t);
+    
+    bool isReadyForMoreSamples(uint64_t);
+    void didBecomeReadyForMoreSamples(uint64_t);
+    void provideMediaData(uint64_t);
+    void provideMediaData(TrackBuffer&, uint64_t);
+    
+    void trackDidChangeSelected(VideoTrackPrivate&, bool);
+    void trackDidChangeEnabled(AudioTrackPrivate&, bool);
+    
+    using InitializationSegment = SourceBufferParserWebM::InitializationSegment;
+    void didParseInitializationData(InitializationSegment&&);
+    void didEncounterErrorDuringParsing(int32_t);
+    void didProvideMediaDataForTrackId(Ref<MediaSampleAVFObjC>&&, uint64_t trackId, const String& mediaType);
+    
+    
+    void append(SharedBuffer&);
+    void abort();
+    
+    void flush();
+#if PLATFORM(IOS_FAMILY)
+    void flushIfNeeded();
+#endif
+    void flushTrack(uint64_t);
+    void flushVideo();
+    void flushAudio(AVSampleBufferAudioRenderer*);
+    
+    void addTrackBuffer(uint64_t, RefPtr<MediaDescription>&&);
     
     void ensureLayer();
-    void ensureAudioRenderer();
+    void addAudioRenderer(uint64_t);
+    void removeAudioRenderer(uint64_t);
     
     void destroyLayer();
-    void destroyAudioRenderer();
+    void destroyAudioRenderer(RetainPtr<AVSampleBufferAudioRenderer>);
+    void destroyAudioRenderers();
     void clearTracks();
     
     const Logger& logger() const final { return m_logger.get(); }
@@ -169,32 +212,40 @@ private:
     RetainPtr<AVSampleBufferRenderSynchronizer> m_synchronizer;
     RetainPtr<id> m_durationObserver;
     WeakPtr<WebMResourceClient> m_resourceClient;
-    
+
     Vector<RefPtr<VideoTrackPrivateWebM>> m_videoTracks;
     Vector<RefPtr<AudioTrackPrivateWebM>> m_audioTracks;
+    HashMap<uint64_t, UniqueRef<TrackBuffer>, DefaultHash<uint64_t>, WTF::UnsignedWithZeroKeyHashTraits<uint64_t>> m_trackBufferMap;
+    RefPtr<TimeRanges> m_buffered { TimeRanges::create() };
     
     RetainPtr<AVSampleBufferDisplayLayer> m_displayLayer;
-    RetainPtr<AVSampleBufferAudioRenderer> m_audioRenderer;
+    HashMap<uint64_t, RetainPtr<AVSampleBufferAudioRenderer>, DefaultHash<uint64_t>, WTF::UnsignedWithZeroKeyHashTraits<uint64_t>> m_audioRenderers;
+    Ref<SourceBufferParserWebM> m_parser;
     
-    SampleMap m_videoSamples;
-    SampleMap m_audioSamples;
+#if PLATFORM(IOS_FAMILY)
+    bool m_displayLayerWasInterrupted { false };
+#endif
     
-    MediaPlayer::NetworkState m_networkState;
-    MediaPlayer::ReadyState m_readyState;
+    MediaPlayer::NetworkState m_networkState { MediaPlayer::NetworkState::Empty };
+    MediaPlayer::ReadyState m_readyState { MediaPlayer::ReadyState::HaveNothing };
     
     Ref<const Logger> m_logger;
     const void* m_logIdentifier;
     std::unique_ptr<VideoLayerManagerObjC> m_videoLayerManager;
     
     FloatSize m_naturalSize;
-    bool m_hasAudio;
-    bool m_hasVideo;
-    MediaTime m_currentTime;
-    MediaTime m_duration;
-    double m_rate;
-    bool m_seeking;
-    bool m_paused;
-    bool m_visible;
+    bool m_hasAudio { false };
+    bool m_hasVideo { false };
+    MediaTime m_currentTime { MediaTime::zeroTime() };
+    MediaTime m_duration { MediaTime::zeroTime() };
+    double m_rate { 1 };
+    bool m_seeking { false };
+    bool m_visible { false };
+    
+    uint64_t m_enabledVideoTrackID { notFound };
+    uint32_t m_abortCalled { 0 };
+    bool m_parsingSucceeded { true };
+    bool m_processingInitializationSegment { false };
 };
 
 } // namespace WebCore
